@@ -1,0 +1,76 @@
+ZAS CANTEEN — INSTALLATION GUIDE (Hostinger / Cloudways / any PHP 8 + MySQL host)
+==================================================================================
+
+WHAT'S IN THIS PACKAGE
+  config.php       — DB credentials + optional OpenAI key (EDIT THIS FIRST)
+  lib.php          — shared library (auth, PDO, audit, CSRF)
+  api.php          — all backend actions (REST-style JSON API)
+  database.sql      — database schema + sample data (RUN ONCE, fresh installs)
+  migration_complimentary.sql — upgrade for EXISTING installs (comp feature + indexes)
+  index.php        — login page
+  admin.php        — Admin PC dashboard
+  accounts.php     — Accounts mobile app (purchase / allocation / top-up)
+  chef.php         — Chef mobile app (stock / consumption)
+  sales.php        — Sales mobile app (Urdu order queue with voice)
+  customer.php     — Customer mobile app (wallet / menu / cart / orders)
+  app.js           — shared frontend helpers (sounds, confetti, counters)
+  manifest.json    — PWA manifest
+  sw.js            — service worker (offline shell)
+
+INSTALL — 5 STEPS
+  1. Create a MySQL database in your hosting panel (e.g. u630220206_canteen).
+  2. Open phpMyAdmin → select the database → Import → database.sql. Run it ONCE.
+     ALREADY LIVE? Do NOT re-import database.sql (it wipes data) — instead
+     import migration_complimentary.sql once to add the new feature + indexes.
+  3. Edit config.php: set DB_HOST / DB_NAME / DB_USER / DB_PASS.
+     (Optional) paste your OpenAI API key into OPENAI_API_KEY for premium
+     Urdu voice on the Sales screen. Leave '' to use the phone's built-in voice.
+  4. Upload ALL files to your domain folder (public_html or canteen.zas.deals/).
+  5. Create two empty folders next to the files: uploads/  and  voices/
+     (the app also tries to create them itself if PHP has write permission).
+
+LOGIN (seed passwords auto-upgrade to bcrypt on first login)
+  admin / admin123      → Admin dashboard
+  accounts / acc123     → Accounts app
+  chef1 / chef123, chef2 / chef456 → Chef apps
+  sales / sales123      → Sales app (Urdu)
+  ahmed / ahmed123, sara / sara123 → sample customers
+  *** Change all passwords immediately after first login (Admin → Users). ***
+
+DAILY FLOW
+  Accounts records purchase  → chef kitchen stock added automatically
+  Chef records consumption   → deducted from kitchen stock
+  Admin/Accounts allocates menu qty → sales kitchen "today's stock"
+  Customer orders from menu  → wallet & sales stock deducted, order to queue
+  Sales sees queue (Urdu, auto-refresh 8 s), taps 🔊 to hear name+items,
+    marks Preparing → Delivered (delivered deletes the cached voice mp3)
+  Admin can cancel (refund + stock restore) or reverse delivered (refund only)
+
+COMPLIMENTARY (FREE) ITEMS
+  Admin (🎁 Complimentary) or Accounts (Free Items tab) assigns a menu item
+  free to a customer, with a quantity limit and optional expiry date.
+  • The customer sees it at the top of the menu labelled FREE and can order
+    it with zero wallet deduction; paid items still charge normally.
+  • Limits are enforced server-side (no repeat misuse, race-safe), duplicate
+    active allocations for the same customer+item are blocked.
+  • Cancelling an order returns the free units to the customer's allowance.
+  • Full history (who assigned, when, used/limit, expiry, status) stays in
+    the Complimentary list and the Audit Log. Free order lines are stored
+    with is_comp=1 in order_items, separate from paid lines.
+
+URDU VOICE COST (OpenAI, optional)
+  Each order generates ONE mp3 (~10 s ≈ Rs 0.06 / $0.0002). Replays are free
+  (file cached in voices/). File is auto-deleted when order is delivered.
+  1,000 orders/month ≈ $0.20/month.
+
+PWA INSTALL (Chef / Sales / Customer phones)
+  Open the site in Chrome on Android → menu → "Add to Home screen".
+  Provide two PNG icons named icon-192.png and icon-512.png (192×192 and
+  512×512) in the same folder — any square logo works.
+
+SECURITY NOTES
+  - HTTPS required (enable SSL / Let's Encrypt in your hosting panel).
+  - Passwords bcrypt; MD5 seeds auto-upgrade at first login.
+  - All mutations require a CSRF token and role checks server-side.
+  - Login rate-limited (8 failed attempts → 5-minute lock).
+  - Every action is written to the Audit Log (Admin → Audit Log).
