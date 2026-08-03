@@ -32,6 +32,13 @@ td{padding:11px 14px;border-top:1px solid rgba(255,255,255,.05)}
 .btn:hover{filter:brightness(1.08)}
 .btn:active{transform:scale(.96)}
 .btn.ghost{background:rgba(255,255,255,.07);color:#EDF1F8}
+.btn.step{padding:0;width:36px;height:34px;font-size:19px;line-height:1;background:rgba(255,255,255,.08);color:#EDF1F8;vertical-align:middle}
+.btn.step:hover{background:rgba(255,176,32,.2);color:#FFB020;filter:none}
+.btn.step.minus:hover{background:rgba(255,92,92,.2);color:#FF8080}
+.btn.step[disabled]{opacity:.3;cursor:not-allowed;pointer-events:none}
+.qv{font-weight:700;font-size:16px;font-variant-numeric:tabular-nums;display:inline-block;min-width:44px}
+.qv.low{color:#FF5C5C}
+.qv.busy{color:#FFB020}
 .btn.ghost.on{background:rgba(255,176,32,.15);color:#FFB020;box-shadow:inset 0 0 0 1px #FFB020}
 .btn.red{background:rgba(255,92,92,.15);color:#FF8080}
 input,select,textarea{padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:#EDF1F8;font-family:inherit;font-size:14px;outline:none}
@@ -306,11 +313,58 @@ window.invSave=async function(iid){await api('inventory_adjust',{item_id:iid,qty
 
 // ---------- Sales Stock ----------
 async function salesstock(){
-  M.innerHTML='<h1>Sales Stock (Today)</h1><div class="bar"><button class="btn" onclick="allocForm()">+ Allocate</button></div><div id="tbl"></div>';
-  var j=await api('salesstock_list');CACHE.ss=j.rows;
-  var h='<table><tr><th>Kitchen</th><th>Menu Item</th><th>Remaining Qty</th><th></th></tr>';
-  j.rows.forEach(function(r,i){h+='<tr><td>'+esc(r.kitchen)+'</td><td>'+(r.emoji||'')+' '+esc(r.name)+'</td><td>'+(+r.qty<=5?'<span style="color:#FF5C5C;font-weight:700">'+r.qty+' ⚠</span>':r.qty)+'</td><td style="text-align:right;white-space:nowrap"><button class="btn ghost" onclick="adjustForm('+i+')">Adjust</button></td></tr>'});
+  M.innerHTML='<h1>Sales Stock (Today)</h1><div class="bar"><button class="btn" onclick="allocForm()">+ Allocate</button>'+
+    '<span style="color:#8A93A6;font-size:13px">Tap − / + to change by 1 · use Adjust for a bigger change</span></div><div id="tbl"></div>';
+  var j=await api('salesstock_list');CACHE.ss=j.rows;STEP={};
+  var h='<table><tr><th>Kitchen</th><th>Menu Item</th><th>Remaining Qty</th><th style="text-align:right">Adjust Stock</th></tr>';
+  j.rows.forEach(function(r,i){
+    h+='<tr><td>'+esc(r.kitchen)+'</td><td>'+(r.emoji||'')+' '+esc(r.name)+'</td>'+
+       '<td><span class="qv" id="q'+i+'"></span></td>'+
+       '<td style="text-align:right;white-space:nowrap">'+
+         '<button class="btn step minus" id="m'+i+'" onclick="stepQty('+i+',-1)" title="Reduce by 1">−</button> '+
+         '<button class="btn step" onclick="stepQty('+i+',1)" title="Add 1">+</button> '+
+         '<button class="btn ghost" onclick="adjustForm('+i+')">Adjust</button>'+
+       '</td></tr>';
+  });
   document.getElementById('tbl').innerHTML=h+'</table>';
+  j.rows.forEach(function(r,i){paintQty(i)});
+}
+
+// Inline − / + steppers. Taps are applied to the screen straight away and the
+// accumulated change is sent as ONE request once tapping stops, so holding −
+// five times is a single -5 (one audit row) instead of five separate calls.
+var STEP={};
+function paintQty(i){
+  var el=document.getElementById('q'+i); if(!el)return;
+  var r=CACHE.ss[i], q=+r.qty, s=STEP[i];
+  el.className='qv'+(q<=5?' low':'')+(s&&s.delta?' busy':'');
+  el.textContent=q+(q<=5?' ⚠':'');
+  var m=document.getElementById('m'+i); if(m)m.disabled=(q<=0);
+}
+window.stepQty=function(i,d){
+  var r=CACHE.ss[i], next=(+r.qty)+d;
+  if(next<0){toast('Already at zero',true);return}
+  r.qty=next;                                  // show it immediately
+  var s=STEP[i]||(STEP[i]={delta:0,timer:null});
+  s.delta+=d;
+  paintQty(i);
+  sfx.tick();
+  clearTimeout(s.timer);
+  s.timer=setTimeout(function(){flushStep(i)},700);
+};
+async function flushStep(i){
+  var s=STEP[i]; if(!s||!s.delta)return;
+  var d=s.delta, r=CACHE.ss[i];
+  s.delta=0;
+  try{
+    await api('allocate',{kitchen_id:r.kitchen_id,menu_item_id:r.menu_item_id,qty:d});
+    paintQty(i);
+    toast(esc(r.name)+' '+(d>0?'+':'')+d+' → '+r.qty);
+    sfx.whoosh();
+  }catch(e){
+    toast('Could not save — reloading stock',true);
+    nav('salesstock');                         // server is the truth; resync
+  }
 }
 window.adjustForm=function(i){
   var r=CACHE.ss[i];
