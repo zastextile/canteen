@@ -11,7 +11,14 @@ function db(): PDO {
   static $pdo = null;
   if ($pdo === null) {
     $pdo = new PDO('mysql:host=' . DB_HOST . ';dbname=' . DB_NAME . ';charset=utf8mb4', DB_USER, DB_PASS,
-      [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]);
+      [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+       // Pakistan Standard Time. The server's MySQL runs on UTC, so without this every
+       // DEFAULT current_timestamp, NOW() and CURDATE() lands 5 hours behind the real
+       // Karachi time that PHP already uses (config.php sets Asia/Karachi). A fixed
+       // +05:00 offset is used rather than the name 'Asia/Karachi' because shared hosts
+       // usually have MySQL's named-timezone tables unloaded; Pakistan has no DST, so
+       // the offset never changes.
+       PDO::MYSQL_ATTR_INIT_COMMAND => "SET time_zone = '+05:00'"]);
   }
   return $pdo;
 }
