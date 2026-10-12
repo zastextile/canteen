@@ -66,6 +66,9 @@ nav a span{display:block;font-size:22px;margin-bottom:2px}
 .skel{height:110px;border-radius:20px;background:linear-gradient(100deg,rgba(255,255,255,.04) 40%,rgba(255,255,255,.09) 50%,rgba(255,255,255,.04) 60%);background-size:200% 100%;animation:sh 1.2s infinite}
 @keyframes sh{to{background-position:-200% 0}}
 .empty{text-align:center;color:#8A93A6;padding:50px 30px;position:relative;z-index:1}
+.vsw{flex:1;padding:10px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);
+  color:#8A93A6;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer}
+.vsw.on{background:rgba(255,176,32,.15);border-color:#FFB020;color:#FFB020}
 </style>
 </head>
 <body>
@@ -78,9 +81,12 @@ nav a span{display:block;font-size:22px;margin-bottom:2px}
   <a data-t="cart"><span>🛒</span>Cart<b class="badge" id="cb" style="display:none"></b></a>
   <a data-t="orders"><span>🧾</span>My Orders</a>
 </nav>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="app.js"></script>
+<script src="menu3d.js"></script>
 <script>
 var V=document.getElementById('view'),MENU=[],COMPS=[],CART={},CARTC={},BAL=0,CAT='All';
+var MVIEW=localStorage.getItem('zas_menu_view')||'showcase';   // showcase | grid
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
 document.querySelectorAll('nav a').forEach(function(a){a.onclick=function(){sfx.tick();
   document.querySelectorAll('nav a').forEach(function(x){x.classList.toggle('on',x===a)});
@@ -119,6 +125,23 @@ async function home(){
 async function menuTab(){
   V.innerHTML='<div class="grid"><div class="skel"></div><div class="skel"></div><div class="skel"></div><div class="skel"></div></div>';
   await loadMenu();
+  var sw='<div style="display:flex;gap:8px;padding:10px 16px 0">'+
+    '<button class="vsw'+(MVIEW==='showcase'?' on':'')+'" onclick="setView(\'showcase\')">🍽 Showcase</button>'+
+    '<button class="vsw'+(MVIEW==='grid'?' on':'')+'" onclick="setView(\'grid\')">☰ Quick list</button></div>';
+  if(MVIEW==='showcase'){
+    V.innerHTML=sw+'<div id="m3dhost"></div>';
+    Menu3D.render(document.getElementById('m3dhost'),{
+      items:MENU, comps:COMPS,
+      onAdd:function(id,isFree){ isFree?addComp(id):add(id); }
+    });
+    return;
+  }
+  V.innerHTML=sw+'<div id="gridhost"></div>';
+  gridMenu(document.getElementById('gridhost'));
+}
+window.setView=function(v){MVIEW=v;localStorage.setItem('zas_menu_view',v);sfx.tick();menuTab()};
+
+function gridMenu(host){
   var cats=['All'].concat(MENU.map(function(m){return m.category}).filter(function(v,i,a){return a.indexOf(v)===i}));
   var h='';
   if(COMPS.length){
@@ -148,9 +171,9 @@ async function menuTab(){
       (out?'<div class="low">Out of Stock</div>':(+m.stock<=10?'<div class="low">Only '+m.stock+' left</div>':''))+
       '<button '+(out?'disabled':'')+' onclick="add('+m.id+')">'+(out?'Out of Stock':'+ Add')+'</button></div>';
   });
-  V.innerHTML=h+'</div>';
+  host.innerHTML=h+'</div>';
   // 3D tilt
-  document.querySelectorAll('[data-tilt]').forEach(function(el){
+  host.querySelectorAll('[data-tilt]').forEach(function(el){
     function mv(e){var r=el.getBoundingClientRect(),p=e.touches?e.touches[0]:e;
       var dx=(p.clientX-r.left)/r.width-.5,dy=(p.clientY-r.top)/r.height-.5;
       el.style.transform='perspective(500px) rotateY('+dx*7+'deg) rotateX('+(-dy*7)+'deg)'}

@@ -6,7 +6,7 @@ require_once __DIR__ . '/lib.php';
 $a = $_GET['a'] ?? '';
 $READONLY = ['stats','users_list','kitchens_list','vendors_list','items_list','menu_list','orders_list',
   'inventory_list','salesstock_list','wallets_list','report','audit_list','chef_stock','sales_today',
-  'queue','customer_menu','my_orders','wallet_balance','whoami','comp_list'];
+  'queue','customer_menu','my_orders','wallet_balance','whoami','comp_list','dish_photo_list'];
 if (!in_array($a, $READONLY, true) && $a !== 'login') check_csrf();
 // Read-only actions never write to the session — release the session lock early so
 // concurrent requests from the same user (menu + orders + polling) don't serialize.
@@ -678,6 +678,61 @@ case 'order_reverse': {
     audit((int)$me['id'],$me['name'],'Reverse order (refund only)','orders',$id,null);
     json_out(['ok'=>true]);
   } catch (Throwable $ex){ if($d->inTransaction())$d->rollBack(); fail('Reverse failed: '.$ex->getMessage(),500); }
+}
+
+// ---------- Dish photos (admin) ----------
+// Stored on disk as dish/<menu_item_id>.webp, never in the database, so no schema
+// change is needed and a missing file simply falls back to the item's emoji.
+case 'dish_photo_save': {
+  $me = require_role('admin');
+  $b  = body();
+  $id = (int)($b['menu_item_id'] ?? 0);
+  $data = (string)($b['data'] ?? '');
+  if (!$id) fail('Menu item required');
+  $st = db()->prepare('SELECT name FROM menu_items WHERE id = ?');
+  $st->execute([$id]);
+  $mi = $st->fetch(); if (!$mi) fail('Menu item not found');
+
+  if (!preg_match('#^data:image/(webp|jpeg|png);base64,#', $data, $m)) fail('Unsupported image format');
+  $raw = base64_decode(substr($data, strpos($data, ',') + 1), true);
+  if ($raw === false || strlen($raw) < 256) fail('Could not read that image');
+  if (strlen($raw) > 400 * 1024) fail('Image too large — keep it under 400 KB');
+  $info = @getimagesizefromstring($raw);
+  if (!$info) fail('That file is not a real image');
+
+  $dir = __DIR__ . '/dish';
+  if (!is_dir($dir) && !@mkdir($dir, 0755, true)) fail('Could not create the dish/ folder — create it manually and set it writable', 500);
+  $ext  = $m[1] === 'jpeg' ? 'jpg' : $m[1];
+  foreach (['webp','jpg','png'] as $old) {            // one photo per dish, whatever the old extension
+    if ($old !== $ext && is_file("$dir/$id.$old")) @unlink("$dir/$id.$old");
+  }
+  if (@file_put_contents("$dir/$id.$ext", $raw) === false) fail('Could not write the file — check dish/ is writable', 500);
+
+  audit((int)$me['id'], $me['name'], 'Dish photo uploaded: ' . $mi['name'] . ' (' . round(strlen($raw)/1024) . ' KB)', 'menu_items', $id, null);
+  json_out(['ok'=>true,'url'=>'dish/'.$id.'.'.$ext,'kb'=>round(strlen($raw)/1024,1)]);
+}
+case 'dish_photo_delete': {
+  $me = require_role('admin');
+  $id = (int)(body()['menu_item_id'] ?? 0);
+  if (!$id) fail('Menu item required');
+  $gone = false;
+  foreach (['webp','jpg','png'] as $ext) {
+    if (is_file(__DIR__ . "/dish/$id.$ext")) { @unlink(__DIR__ . "/dish/$id.$ext"); $gone = true; }
+  }
+  if (!$gone) fail('No photo to remove');
+  audit((int)$me['id'], $me['name'], 'Dish photo removed', 'menu_items', $id, null);
+  json_out(['ok'=>true]);
+}
+case 'dish_photo_list': {
+  require_role('admin','accounts');
+  $out = [];
+  foreach (db()->query('SELECT id FROM menu_items')->fetchAll() as $r) {
+    foreach (['webp','jpg','png'] as $ext) {
+      $f = __DIR__ . '/dish/' . $r['id'] . '.' . $ext;
+      if (is_file($f)) { $out[(string)$r['id']] = ['url'=>'dish/'.$r['id'].'.'.$ext,'kb'=>round(filesize($f)/1024,1)]; break; }
+    }
+  }
+  json_out(['ok'=>true,'photos'=>$out]);
 }
 
 // ---------- Reports & audit ----------
