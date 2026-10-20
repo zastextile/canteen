@@ -1,5 +1,5 @@
 // ZAS Canteen — offline shell service worker
-const CACHE = 'zas-canteen-v2';
+const CACHE = 'zas-canteen-v3';
 const SHELL = ['./index.php', './manifest.json', './app.js', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {

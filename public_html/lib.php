@@ -115,6 +115,16 @@ function check_csrf(): void {
 
 function e(string $s): string { return htmlspecialchars($s, ENT_QUOTES, 'UTF-8'); }
 
+// Cache-busting asset URL: app.js?v=<file modification time>.
+// The browser and the service worker key their cache on the full URL, so a
+// re-uploaded file gets a new URL and is fetched immediately, while an
+// unchanged file keeps the same URL and stays cached. Without this a changed
+// .js keeps serving from cache until every phone is cleared by hand.
+function asset(string $file): string {
+  $path = __DIR__ . '/' . $file;
+  return $file . '?v=' . (is_file($path) ? filemtime($path) : '1');
+}
+
 // first active sales kitchen
 function sales_kitchen_id(): int {
   return (int)db()->query("SELECT id FROM kitchens WHERE type='sales' AND status='active' ORDER BY id LIMIT 1")->fetchColumn();

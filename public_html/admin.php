@@ -84,8 +84,8 @@ dialog label{font-size:12px;color:#8A93A6;letter-spacing:1px;text-transform:uppe
 </aside>
 <main id="main"></main>
 <dialog id="dlg"></dialog>
-<script src="app.js"></script>
-<script src="report.js"></script>
+<script src="<?= asset('app.js') ?>"></script>
+<script src="<?= asset('report.js') ?>"></script>
 <script>
 var M = document.getElementById('main'), DLG = document.getElementById('dlg');
 var CACHE = {};

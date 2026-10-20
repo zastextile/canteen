@@ -83,7 +83,7 @@ nav a span{display:block;font-size:22px;margin-bottom:2px}
   <a data-t="cart"><span>🛒</span>Cart<b class="badge" id="cb" style="display:none"></b></a>
   <a data-t="orders"><span>🧾</span>My Orders</a>
 </nav>
-<script src="app.js"></script>
+<script src="<?= asset('app.js') ?>"></script>
 <script>
 var V=document.getElementById('view'),MENU=[],COMPS=[],CART={},CARTC={},BAL=0,CAT='All';
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}

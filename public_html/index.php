@@ -44,7 +44,7 @@ button::after{content:'';position:absolute;top:0;left:-60%;width:40%;height:100%
   <button type="submit">Sign In</button>
   <div class="err" id="err"></div>
 </form>
-<script src="app.js"></script>
+<script src="<?= asset('app.js') ?>"></script>
 <script>
 // starfield
 (function(){

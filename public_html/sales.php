@@ -85,7 +85,7 @@ nav a span{display:block;font-size:24px;margin-bottom:2px}
   <a data-t="queue" class="on"><span>🧾</span>آرڈر</a>
   <a data-t="stock"><span>🛒</span>آج کا اسٹاک</a>
 </nav>
-<script src="app.js"></script>
+<script src="<?= asset('app.js') ?>"></script>
 <script>
 var V=document.getElementById('view'),TAB='queue',TIMER=null,AUDIO={};
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}

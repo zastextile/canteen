@@ -91,8 +91,8 @@ main{animation:mfade .25s ease}
 </aside>
 <main id="main"></main>
 <dialog id="dlg"></dialog>
-<script src="app.js"></script>
-<script src="report.js"></script>
+<script src="<?= asset('app.js') ?>"></script>
+<script src="<?= asset('report.js') ?>"></script>
 <script>
 var M=document.getElementById('main'),DLG=document.getElementById('dlg'),DATA={},CACHE={};
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}

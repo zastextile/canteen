@@ -40,7 +40,7 @@ nav a span{display:block;font-size:22px;margin-bottom:2px}
   <a data-t="stock" class="on"><span>🥬</span>Kitchen Stock</a>
   <a data-t="consume"><span>🍳</span>Consumption</a>
 </nav>
-<script src="app.js"></script>
+<script src="<?= asset('app.js') ?>"></script>
 <script>
 var V=document.getElementById('view');
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
