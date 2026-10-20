@@ -304,11 +304,19 @@ case 'allocate': {
 }
 case 'salesstock_list': {
   require_role('admin','accounts');
-  $rows = db()->query("SELECT i.id,i.kitchen_id,i.menu_item_id,i.quantity AS qty,m.name,NULL AS name_urdu,c.icon AS emoji,k.name kitchen
-                       FROM inventory i JOIN menu_items m ON m.id=i.menu_item_id
-                       LEFT JOIN categories c ON c.name=m.category
-                       JOIN kitchens k ON k.id=i.kitchen_id
-                       WHERE i.menu_item_id IS NOT NULL ORDER BY m.name")->fetchAll();
+  // Driven by menu_items, not inventory: a dish added in Menu Items has no
+  // inventory row yet, and used to stay invisible here until something
+  // allocated to it. Now it shows with qty 0 and the + button creates the row.
+  $rows = db()->query("SELECT COALESCE(i.id,0) id, k.id kitchen_id, m.id menu_item_id,
+                         COALESCE(i.quantity,0) AS qty, m.name, NULL AS name_urdu,
+                         c.icon AS emoji, k.name kitchen, m.menu_group,
+                         CASE WHEN i.id IS NULL THEN 1 ELSE 0 END AS never_stocked
+                       FROM menu_items m
+                       JOIN kitchens k ON k.type='sales' AND k.status='active'
+                       LEFT JOIN inventory i ON i.menu_item_id = m.id AND i.kitchen_id = k.id
+                       LEFT JOIN categories c ON c.name = m.category
+                       WHERE m.status='active'
+                       ORDER BY m.name")->fetchAll();
   json_out(['ok'=>true,'rows'=>$rows]);
 }
 
@@ -680,11 +688,11 @@ case 'order_reverse': {
   } catch (Throwable $ex){ if($d->inTransaction())$d->rollBack(); fail('Reverse failed: '.$ex->getMessage(),500); }
 }
 
-// ---------- Dish photos (admin) ----------
-// Stored on disk as dish/<menu_item_id>.webp, never in the database, so no schema
-// change is needed and a missing file simply falls back to the item's emoji.
+// ---------- Dish photos (admin + accounts) ----------
+// Stored on disk as dish/<menu_item_id>.webp, never in the database, so there is
+// no schema change and a missing file simply falls back to the item's emoji.
 case 'dish_photo_save': {
-  $me = require_role('admin');
+  $me = require_role('admin','accounts');
   $b  = body();
   $id = (int)($b['menu_item_id'] ?? 0);
   $data = (string)($b['data'] ?? '');
@@ -697,13 +705,12 @@ case 'dish_photo_save': {
   $raw = base64_decode(substr($data, strpos($data, ',') + 1), true);
   if ($raw === false || strlen($raw) < 256) fail('Could not read that image');
   if (strlen($raw) > 400 * 1024) fail('Image too large — keep it under 400 KB');
-  $info = @getimagesizefromstring($raw);
-  if (!$info) fail('That file is not a real image');
+  if (!@getimagesizefromstring($raw)) fail('That file is not a real image');
 
   $dir = __DIR__ . '/dish';
-  if (!is_dir($dir) && !@mkdir($dir, 0755, true)) fail('Could not create the dish/ folder — create it manually and set it writable', 500);
-  $ext  = $m[1] === 'jpeg' ? 'jpg' : $m[1];
-  foreach (['webp','jpg','png'] as $old) {            // one photo per dish, whatever the old extension
+  if (!is_dir($dir) && !@mkdir($dir, 0755, true)) fail('Could not create the dish/ folder — create it manually and make it writable', 500);
+  $ext = $m[1] === 'jpeg' ? 'jpg' : $m[1];
+  foreach (['webp','jpg','png'] as $old) {
     if ($old !== $ext && is_file("$dir/$id.$old")) @unlink("$dir/$id.$old");
   }
   if (@file_put_contents("$dir/$id.$ext", $raw) === false) fail('Could not write the file — check dish/ is writable', 500);
@@ -712,7 +719,7 @@ case 'dish_photo_save': {
   json_out(['ok'=>true,'url'=>'dish/'.$id.'.'.$ext,'kb'=>round(strlen($raw)/1024,1)]);
 }
 case 'dish_photo_delete': {
-  $me = require_role('admin');
+  $me = require_role('admin','accounts');
   $id = (int)(body()['menu_item_id'] ?? 0);
   if (!$id) fail('Menu item required');
   $gone = false;
@@ -724,7 +731,7 @@ case 'dish_photo_delete': {
   json_out(['ok'=>true]);
 }
 case 'dish_photo_list': {
-  require_role('admin','accounts');
+  require_login();
   $out = [];
   foreach (db()->query('SELECT id FROM menu_items')->fetchAll() as $r) {
     foreach (['webp','jpg','png'] as $ext) {
@@ -850,6 +857,82 @@ case 'report': {
             GROUP BY c.id
             HAVING topups > 0 OR refunds > 0 OR spent > 0 OR deducted > 0 OR balance > 0
             ORDER BY topups DESC, balance DESC";
+  } elseif ($type === 'ledger') {
+    // Professional running-balance statement for one customer: every top-up,
+    // refund, order and deduction in date order, with the balance after each.
+    $cust = (int)($_GET['customer'] ?? 0);
+    if (!$cust) fail('Pick a customer for the ledger');
+    $cn = $d->prepare("SELECT name, wallet FROM users WHERE id = ? AND role = 'customer'");
+    $cn->execute([$cust]);
+    $cu = $cn->fetch();
+    if (!$cu) fail('Customer not found');
+    $cname = $cu['name'];
+
+    // Opening is derived backwards from the wallet the customer actually holds,
+    // rather than summing movements forwards from zero. Two seed accounts were
+    // given a starting balance directly on users.wallet with no matching ledger
+    // row; counting forwards would show them running impossibly negative, while
+    // counting back from the real balance puts that money in the opening line
+    // where it belongs, and makes the closing line always equal the live wallet.
+    $after = $d->prepare("SELECT COALESCE(SUM(CASE WHEN type IN ('topup','refund') THEN amount ELSE -amount END),0)
+                          FROM wallet_topups WHERE customer_id = ? AND DATE(created_at) >= ?");
+    $after->execute([$cust, $from]);
+    $bal = (float)$cu['wallet'] - (float)$after->fetchColumn();
+
+    $mv = $d->prepare("SELECT w.created_at, w.type, w.amount, w.note, COALESCE(u.name,'—') AS by_whom
+                       FROM wallet_topups w LEFT JOIN users u ON u.id = w.created_by
+                       WHERE w.customer_id = ? AND DATE(w.created_at) BETWEEN ? AND ?
+                       ORDER BY w.created_at, w.id");
+    $mv->execute([$cust, $from, $to]);
+
+    $LBL = ['topup'=>'Wallet top-up','refund'=>'Refund','order'=>'Order','deduct'=>'Manual deduction'];
+    $rows = [['date'=>$from,'particulars'=>'Opening balance','by'=>'','in'=>0,'out'=>0,'balance'=>round($bal,2)]];
+    $tin = 0.0; $tout = 0.0;
+    foreach ($mv->fetchAll() as $r) {
+      $credit = in_array($r['type'], ['topup','refund'], true);
+      $amt = (float)$r['amount'];
+      $bal += $credit ? $amt : -$amt;
+      if ($credit) $tin += $amt; else $tout += $amt;
+      $rows[] = [
+        'date'        => $r['created_at'],
+        'particulars' => ($LBL[$r['type']] ?? $r['type']) . ($r['note'] ? ' — ' . $r['note'] : ''),
+        'by'          => $r['by_whom'],
+        'in'          => $credit ? round($amt,2) : 0,
+        'out'         => $credit ? 0 : round($amt,2),
+        'balance'     => round($bal,2),
+      ];
+    }
+    $rows[] = ['date'=>$to,'particulars'=>'Closing balance','by'=>'','in'=>round($tin,2),'out'=>round($tout,2),'balance'=>round($bal,2)];
+    json_out(['ok'=>true,'type'=>$type,'from'=>$from,'to'=>$to,'summary'=>$summary,
+              'money'=>['in','out','balance'],'title'=>'Ledger — '.$cname,'rows'=>$rows]);
+
+  } elseif ($type === 'stockledger') {
+    // Daily movement of the sales counter: what went in, what was sold, what was
+    // given away free. inv_allocations records the item by name, so this matches
+    // on name the same way the allocation screen does.
+    $p = [$from,$to,$from,$to];
+    $st = $d->prepare("SELECT t.day, t.item,
+              COALESCE(SUM(t.added),0) added,
+              COALESCE(SUM(t.sold),0) sold,
+              COALESCE(SUM(t.free),0) free,
+              COALESCE(SUM(t.added),0) - COALESCE(SUM(t.sold),0) - COALESCE(SUM(t.free),0) net
+            FROM (
+              SELECT DATE(a.created_at) day, a.item_name item, a.quantity added, 0 sold, 0 free
+                FROM inv_allocations a JOIN kitchens k ON k.id = a.kitchen_id
+               WHERE k.type = 'sales' AND DATE(a.created_at) BETWEEN ? AND ?
+              UNION ALL
+              SELECT DATE(o.created_at) day, oi.item_name item, 0 added,
+                     CASE WHEN oi.is_comp = 0 THEN oi.quantity ELSE 0 END,
+                     CASE WHEN oi.is_comp = 1 THEN oi.quantity ELSE 0 END
+                FROM order_items oi JOIN orders o ON o.id = oi.order_id
+               WHERE o.status IN $LIVE AND DATE(o.created_at) BETWEEN ? AND ?
+            ) t
+            GROUP BY t.day, t.item
+            ORDER BY t.day DESC, t.item");
+    $st->execute($p);
+    json_out(['ok'=>true,'type'=>$type,'from'=>$from,'to'=>$to,'summary'=>$summary,
+              'money'=>[],'title'=>'Daily stock movement','rows'=>$st->fetchAll()]);
+
   } else {
     $type  = 'purchases';
     $money = ['rate','total'];

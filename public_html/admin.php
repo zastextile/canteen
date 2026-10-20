@@ -249,7 +249,7 @@ window.iDel=async function(id){
 // ---------- Menu ----------
 async function menu(){
   M.innerHTML='<h1>Menu Items</h1><div class="bar"><button class="btn" onclick="mForm(null)">+ New Menu Item</button>'+
-    '<span style="color:#8A93A6;font-size:13px">📷 adds the dish photo customers see &mdash; any picture, resized automatically</span></div><div id="tbl"></div>';
+    '<span style="color:#8A93A6;font-size:13px">📷 sets the dish photo customers see &mdash; any picture, resized automatically</span></div><div id="tbl"></div>';
   var j=await api('menu_list');CACHE.m=j.rows;
   var ph={};try{ph=(await api('dish_photo_list')).photos||{}}catch(e){}
   CACHE.ph=ph;
@@ -257,39 +257,38 @@ async function menu(){
   var GB={standard:'',special:'<span class="pill p-pending">⭐ Special</span>',executive:'<span class="pill p-delivered">👑 Executive</span>'};
   j.rows.forEach(function(m,i){
     var p=ph[String(m.id)];
-    h+='<tr><td>'+(p?'<img src="'+p.url+'?v='+Date.now()+'" alt="" style="width:46px;height:58px;object-fit:cover;border-radius:8px;display:block">'
-                   :'<div style="width:46px;height:58px;border-radius:8px;border:1px dashed rgba(255,255,255,.2);display:grid;place-items:center;font-size:20px">'+(m.emoji||'🍽')+'</div>')+'</td>'+
+    h+='<tr><td>'+(p?'<img src="'+p.url+'?v='+Date.now()+'" alt="" style="width:44px;height:55px;object-fit:cover;border-radius:8px;display:block">'
+      :'<div style="width:44px;height:55px;border-radius:8px;border:1px dashed rgba(255,255,255,.2);display:grid;place-items:center;font-size:20px">'+(m.emoji||'🍽')+'</div>')+'</td>'+
       '<td>'+(m.emoji||'')+' '+esc(m.name)+(m.name_urdu?' <span class="urdu" style="color:#8A93A6">'+esc(m.name_urdu)+'</span>':'')+
       (p?'<div style="font-size:11px;color:#3DD68C">photo '+p.kb+' KB</div>':'')+'</td>'+
       '<td>'+esc(m.category)+'</td><td>'+fmt(m.price)+'</td><td>'+(GB[m.menu_group||'standard']||'Standard')+'</td>'+
       '<td>'+(+m.is_active?'<span class="pill p-delivered">Active</span>':'<span class="pill p-cancelled">Disabled</span>')+'</td>'+
-      '<td style="text-align:right;white-space:nowrap"><button class="btn ghost" onclick="dishPhoto('+i+')">📷 Photo</button> '+
+      '<td style="text-align:right;white-space:nowrap"><button class="btn ghost" onclick="dishPhoto('+i+')">📷</button> '+
       '<button class="btn ghost" onclick="mForm('+i+')">Edit</button> <button class="btn red" onclick="mDel('+m.id+')">Delete</button></td></tr>';
   });
   document.getElementById('tbl').innerHTML=h+'</table>';
 }
 
 // ---------- Dish photo ----------
-// Any picture the admin picks is cropped to 4:5 and re-encoded to a 512×640 WebP
-// in the browser, so a 4 MB camera shot arrives as ~30 KB and the spec is enforced
-// here rather than relying on whoever prepares the files.
+// Any picture is cover-cropped to 4:5 and re-encoded to a 512×640 WebP in the
+// browser, so a 4 MB camera shot arrives around 30 KB and the spec is enforced
+// here rather than by whoever prepares the files.
 window.DISHPHOTO='';
 window.dishPhoto=function(i){
-  var m=CACHE.m[i], p=(CACHE.ph||{})[String(m.id)];
+  var m=CACHE.m[i],p=(CACHE.ph||{})[String(m.id)];
   DISHPHOTO='';
   openDlg('<h3>Photo — '+esc(m.name)+'</h3>'+
     '<p style="color:#8A93A6;margin:-6px 0 14px;font-size:13px">Shown to customers on the menu. '+
-    'Pick any photo; it is resized to 512×640 WebP automatically. No photo = the '+(m.emoji||'🍽')+' emoji is used.</p>'+
+    'Pick any photo; it is resized to 512×640 WebP automatically. No photo means the '+(m.emoji||'🍽')+' emoji is used.</p>'+
     '<div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:14px">'+
-      '<img id="dprev" src="'+(p?p.url+'?v='+Date.now():'')+'" style="width:120px;height:150px;object-fit:cover;border-radius:12px;'+
+      '<img id="dprev" src="'+(p?p.url+'?v='+Date.now():'')+'" style="width:110px;height:138px;object-fit:cover;border-radius:12px;'+
       'background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);'+(p?'':'display:none')+'">'+
-      '<div id="dnone" style="width:120px;height:150px;border-radius:12px;border:1px dashed rgba(255,255,255,.2);'+
-      'display:'+(p?'none':'grid')+';place-items:center;font-size:44px">'+(m.emoji||'🍽')+'</div>'+
+      '<div id="dnone" style="width:110px;height:138px;border-radius:12px;border:1px dashed rgba(255,255,255,.2);'+
+      'display:'+(p?'none':'grid')+';place-items:center;font-size:40px">'+(m.emoji||'🍽')+'</div>'+
       '<div style="flex:1"><input type="file" accept="image/*" onchange="dishPick(this)" style="width:100%">'+
-      '<div id="dinfo" style="color:#8A93A6;font-size:12px;margin-top:10px">'+(p?'Current photo '+p.kb+' KB':'No photo yet')+'</div></div>'+
-    '</div>'+
+      '<div id="dinfo" style="color:#8A93A6;font-size:12px;margin-top:10px">'+(p?'Current photo '+p.kb+' KB':'No photo yet')+'</div></div></div>'+
     '<div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">'+
-      (p?'<button class="btn red" onclick="dishPhotoDel('+m.id+')">Remove photo</button>':'')+
+      (p?'<button class="btn red" onclick="dishPhotoDel('+m.id+')">Remove</button>':'')+
       '<button class="btn ghost" onclick="closeDlg()">Cancel</button>'+
       '<button class="btn" onclick="dishPhotoSave('+m.id+')">Save photo</button></div>');
 };
@@ -298,11 +297,10 @@ window.dishPick=function(inp){
   var img=new Image();
   img.onload=function(){
     var W=512,H=640,c=document.createElement('canvas');c.width=W;c.height=H;
-    var x=c.getContext('2d');
-    var s=Math.max(W/img.width,H/img.height),w=img.width*s,h=img.height*s;   // cover-crop to 4:5
+    var x=c.getContext('2d'),s=Math.max(W/img.width,H/img.height),w=img.width*s,h=img.height*s;
     x.drawImage(img,(W-w)/2,(H-h)/2,w,h);
     DISHPHOTO=c.toDataURL('image/webp',0.75);
-    if(DISHPHOTO.indexOf('image/webp')<0)DISHPHOTO=c.toDataURL('image/jpeg',0.8); // Safari fallback
+    if(DISHPHOTO.indexOf('image/webp')<0)DISHPHOTO=c.toDataURL('image/jpeg',0.8);
     var pv=document.getElementById('dprev');pv.src=DISHPHOTO;pv.style.display='block';
     document.getElementById('dnone').style.display='none';
     document.getElementById('dinfo').textContent='Ready to save — '+Math.round(DISHPHOTO.length*0.75/1024)+' KB, 512×640';
@@ -312,8 +310,7 @@ window.dishPick=function(inp){
 };
 window.dishPhotoSave=async function(id){
   if(!DISHPHOTO){toast('Pick a photo first',true);return}
-  try{
-    var j=await api('dish_photo_save',{menu_item_id:id,data:DISHPHOTO});
+  try{var j=await api('dish_photo_save',{menu_item_id:id,data:DISHPHOTO});
     closeDlg();toast('Photo saved — '+j.kb+' KB');sfx.whoosh();nav('menu');
   }catch(e){alert('Upload failed: '+(e&&e.message?e.message:e))}
 };

@@ -5,22 +5,26 @@
 (function () {
 
   var TYPES = [
-    { v: 'sales',     t: '📈 Sales Totals' },
-    { v: 'items',     t: '🍛 Item-wise Sales' },
-    { v: 'customers', t: '🧑 Customer Spending' },
-    { v: 'free',      t: '🎁 Free Items Given' },
-    { v: 'wallets',   t: '💰 Wallet Ledger' },
-    { v: 'purchases', t: '🚚 Purchase History' }
+    { v: 'sales',       t: '📈 Sales Totals' },
+    { v: 'items',       t: '🍛 Item-wise Sales' },
+    { v: 'customers',   t: '🧑 Customer Spending' },
+    { v: 'ledger',      t: '📒 Customer Ledger' },
+    { v: 'stockledger', t: '📦 Daily Stock Movement' },
+    { v: 'free',        t: '🎁 Free Items Given' },
+    { v: 'wallets',     t: '💰 Wallet Ledger' },
+    { v: 'purchases',   t: '🚚 Purchase History' }
   ];
 
   // report-specific column headings; anything not listed is title-cased
   var LABELS = {
     day: 'Date', orders: 'Orders', revenue: 'Paid Sales', free_value: 'Free Value',
     total_value: 'Total Value', item: 'Item', paid_qty: 'Paid Qty', free_qty: 'Free Qty',
-    customer: 'Customer', spent: 'Spent', balance: 'Wallet', qty: 'Qty', value: 'Value',
+    customer: 'Customer', spent: 'Spent', balance: 'Balance', qty: 'Qty', value: 'Value',
     topups: 'Top-Ups', refunds: 'Refunds', deducted: 'Deducted', rate: 'Rate',
     total: 'Total', vendor: 'Vendor', kitchen: 'Kitchen', purchase_date: 'Date',
-    payment_type: 'Payment', bill_number: 'Bill #'
+    payment_type: 'Payment', bill_number: 'Bill #',
+    date: 'Date', particulars: 'Particulars', by: 'By', 'in': 'Received', out: 'Spent',
+    added: 'Added to counter', sold: 'Sold', free: 'Given free', net: 'Net change'
   };
 
   var CSS = ''
@@ -102,7 +106,7 @@
   }
 
   var host = null, last = null;
-  var S = { type: 'sales', from: '', to: '' };
+  var S = { type: 'sales', from: '', to: '', cust: '' };
 
   function shell() {
     var opts = TYPES.map(function (t) {
@@ -120,6 +124,7 @@
       + '</div>'
       + '<div class="zbar">'
       +   '<select id="ztype">' + opts + '</select>'
+      +   '<select id="zcust" hidden></select>'
       +   '<input type="date" id="zfrom" value="' + S.from + '">'
       +   '<input type="date" id="zto" value="' + S.to + '">'
       +   '<button class="zb" id="zrun">Run</button>'
@@ -127,12 +132,29 @@
       + '</div>'
       + '<div id="zbody"></div></div>';
 
-    host.querySelector('#ztype').onchange = function () { S.type = this.value; load(); };
+    host.querySelector('#ztype').onchange = function () { S.type = this.value; syncCust(); load(); };
+    host.querySelector('#zcust').onchange = function () { S.cust = this.value; load(); };
     host.querySelector('#zrun').onclick = function () { if (window.sfx) sfx.tick(); read(); load(); };
     host.querySelector('#zcsv').onclick = csv;
     host.querySelectorAll('.zpre .zb').forEach(function (b) {
       b.onclick = function () { if (window.sfx) sfx.tick(); preset(b.dataset.p); };
     });
+    syncCust();
+  }
+
+  // The customer ledger needs one customer chosen; every other report does not.
+  function syncCust() {
+    var sel = host.querySelector('#zcust');
+    if (!sel) return;
+    sel.hidden = S.type !== 'ledger';
+    if (S.type !== 'ledger' || sel.dataset.filled) return;
+    window.api('wallets_list').then(function (j) {
+      sel.innerHTML = '<option value="">Choose a customer…</option>' + j.rows.map(function (c) {
+        return '<option value="' + c.id + '">' + esc(c.name) + '</option>';
+      }).join('');
+      sel.dataset.filled = '1';
+      if (S.cust) sel.value = S.cust;
+    }).catch(function () {});
   }
 
   function read() {
@@ -159,10 +181,15 @@
 
   async function load() {
     var body = host.querySelector('#zbody');
+    if (S.type === 'ledger' && !S.cust) {
+      body.innerHTML = '<div class="zempty">Choose a customer above to see their ledger.</div>';
+      return;
+    }
     body.innerHTML = '<div class="zempty">Loading…</div>';
     try {
       last = await window.api('report', null,
-        { qs: 'type=' + encodeURIComponent(S.type) + '&from=' + S.from + '&to=' + S.to });
+        { qs: 'type=' + encodeURIComponent(S.type) + '&from=' + S.from + '&to=' + S.to
+              + (S.cust ? '&customer=' + encodeURIComponent(S.cust) : '') });
     } catch (e) {
       body.innerHTML = '<div class="zempty">Could not load the report.</div>';
       return;
@@ -173,7 +200,7 @@
   function draw() {
     var s = last.summary;
     host.querySelector('#zsub').textContent =
-      S.from === S.to ? S.from : S.from + '  →  ' + S.to;
+      (last.title ? last.title + '  ·  ' : '') + (S.from === S.to ? S.from : S.from + '  →  ' + S.to);
 
     var h = '<div class="ztiles">'
       + tile('Paid Sales', 'PKR ' + num(s.revenue), s.orders + ' orders', 'acc')
@@ -230,7 +257,8 @@
     h += '</tr>';
 
     rows.forEach(function (r) {
-      h += '<tr>';
+      var edge = S.type === 'ledger' && /balance$/i.test(String(r.particulars || ''));
+      h += '<tr' + (edge ? ' class="tot"' : '') + '>';
       cols.forEach(function (c) {
         var v = r[c], cls = (isNum[c] ? 'num ' : '') + (/free/.test(c) ? 'free' : '');
         var txt = isNum[c] ? num(v) : (c === 'day' ? dayLabel(v) : v);
@@ -238,6 +266,11 @@
       });
       h += '</tr>';
     });
+
+    // A running-balance statement already carries its own opening and closing
+    // lines, so a summed footer would be meaningless there.
+    if (S.type === 'ledger') return h + '</table></div>'
+      + '<div class="zhint">← swipe the table sideways for the remaining columns</div>';
 
     h += '<tr class="tot">';
     cols.forEach(function (c, i) {

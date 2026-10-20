@@ -29,6 +29,11 @@ h1{font-size:20px}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:10px 16px}
 .mi{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.09);border-radius:20px;padding:14px;transition:transform .15s;will-change:transform}
 .mi .em{font-size:38px}
+/* Dish photo replaces the emoji. Deliberately compact — a little larger than the
+   emoji it stands in for, not a hero image that pushes the price off screen. */
+.mi .ph{width:100%;height:92px;object-fit:cover;border-radius:14px;display:block;
+  background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07)}
+.mi.free .ph{border-color:rgba(61,214,140,.35)}
 .mi .nm{font-weight:700;margin-top:6px;font-size:15px}
 .mi .ur{color:#8A93A6;font-size:15px}
 .mi .pr{color:#FFB020;font-weight:700;margin-top:4px}
@@ -66,9 +71,6 @@ nav a span{display:block;font-size:22px;margin-bottom:2px}
 .skel{height:110px;border-radius:20px;background:linear-gradient(100deg,rgba(255,255,255,.04) 40%,rgba(255,255,255,.09) 50%,rgba(255,255,255,.04) 60%);background-size:200% 100%;animation:sh 1.2s infinite}
 @keyframes sh{to{background-position:-200% 0}}
 .empty{text-align:center;color:#8A93A6;padding:50px 30px;position:relative;z-index:1}
-.vsw{flex:1;padding:10px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);
-  color:#8A93A6;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer}
-.vsw.on{background:rgba(255,176,32,.15);border-color:#FFB020;color:#FFB020}
 </style>
 </head>
 <body>
@@ -81,12 +83,9 @@ nav a span{display:block;font-size:22px;margin-bottom:2px}
   <a data-t="cart"><span>🛒</span>Cart<b class="badge" id="cb" style="display:none"></b></a>
   <a data-t="orders"><span>🧾</span>My Orders</a>
 </nav>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="app.js"></script>
-<script src="menu3d.js"></script>
 <script>
 var V=document.getElementById('view'),MENU=[],COMPS=[],CART={},CARTC={},BAL=0,CAT='All';
-var MVIEW=localStorage.getItem('zas_menu_view')||'showcase';   // showcase | grid
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
 document.querySelectorAll('nav a').forEach(function(a){a.onclick=function(){sfx.tick();
   document.querySelectorAll('nav a').forEach(function(x){x.classList.toggle('on',x===a)});
@@ -105,9 +104,13 @@ S.forEach(function(s){x.globalAlpha=.25+.65*Math.abs(Math.sin(n*.001*s.s+s.p));x
 x.beginPath();x.arc(s.x*W,s.y*H,s.r,0,6.28);x.fill()});x.globalAlpha=1;requestAnimationFrame(t)})(0);
 })();
 
+var PHOTOS={};
 async function loadMenu(){var j=await api('customer_menu');MENU=j.rows;COMPS=j.comps||[];BAL=+j.balance;
+  try{PHOTOS=(await api('dish_photo_list')).photos||{}}catch(e){PHOTOS={}}
   Object.keys(CARTC).forEach(function(id){var c=compFor(id);if(!c)delete CARTC[id];else if(CARTC[id]>+c.remaining)CARTC[id]=+c.remaining});
   updateBadge();return j}
+function dishArt(m){var p=PHOTOS[String(m.id)];
+  return p?'<img class="ph" src="'+p.url+'" alt="" loading="lazy">':'<div class="em">'+(m.emoji||'\ud83c\udf7d')+'</div>'}
 function compFor(id){return COMPS.find(function(c){return +c.menu_item_id===+id})}
 // resolve item details: paid items come from the access-filtered MENU; a complimentary item
 // allocated OUTSIDE the customer's access tiers isn't in MENU, so fall back to its comp row.
@@ -125,23 +128,6 @@ async function home(){
 async function menuTab(){
   V.innerHTML='<div class="grid"><div class="skel"></div><div class="skel"></div><div class="skel"></div><div class="skel"></div></div>';
   await loadMenu();
-  var sw='<div style="display:flex;gap:8px;padding:10px 16px 0">'+
-    '<button class="vsw'+(MVIEW==='showcase'?' on':'')+'" onclick="setView(\'showcase\')">🍽 Showcase</button>'+
-    '<button class="vsw'+(MVIEW==='grid'?' on':'')+'" onclick="setView(\'grid\')">☰ Quick list</button></div>';
-  if(MVIEW==='showcase'){
-    V.innerHTML=sw+'<div id="m3dhost"></div>';
-    Menu3D.render(document.getElementById('m3dhost'),{
-      items:MENU, comps:COMPS,
-      onAdd:function(id,isFree){ isFree?addComp(id):add(id); }
-    });
-    return;
-  }
-  V.innerHTML=sw+'<div id="gridhost"></div>';
-  gridMenu(document.getElementById('gridhost'));
-}
-window.setView=function(v){MVIEW=v;localStorage.setItem('zas_menu_view',v);sfx.tick();menuTab()};
-
-function gridMenu(host){
   var cats=['All'].concat(MENU.map(function(m){return m.category}).filter(function(v,i,a){return a.indexOf(v)===i}));
   var h='';
   if(COMPS.length){
@@ -153,7 +139,7 @@ function gridMenu(host){
       if(+c.repeat_daily)hints.push('daily');
       if(c.time_to)hints.push('until '+c.time_to.slice(0,5));
       if(c.expiry_date)hints.push('till '+c.expiry_date);
-      h+='<div class="mi free'+(out?' out':'')+'"><div class="em">'+(m.emoji||'🍽')+'</div>'+
+      h+='<div class="mi free'+(out?' out':'')+'">'+dishArt(m)+
         '<div class="nm">'+esc(m.name)+'</div><div class="freetag">FREE · '+left+' left'+(+c.repeat_daily?' today':'')+'</div>'+
         (hints.length?'<div style="font-size:11px;color:#8A93A6;margin-top:3px">'+hints.join(' · ')+'</div>':'')+
         (out?'<div class="low">Out of Stock</div>':'')+
@@ -164,16 +150,16 @@ function gridMenu(host){
   h+='<div class="cats">'+cats.map(function(c){return '<button class="'+(c===CAT?'on':'')+'" onclick="setCat(\''+esc(c)+'\')">'+esc(c)+'</button>'}).join('')+'</div><div class="grid">';
   MENU.filter(function(m){return CAT==='All'||m.category===CAT}).forEach(function(m){
     var out=+m.stock<=0;
-    h+='<div class="mi'+(out?' out':'')+'" data-tilt><div class="em">'+(m.emoji||'🍽')+'</div>'+
+    h+='<div class="mi'+(out?' out':'')+'" data-tilt>'+dishArt(m)+
       '<div class="nm">'+esc(m.name)+'</div><div class="ur urdu">'+esc(m.name_urdu||'')+'</div>'+
       '<div class="pr">'+fmt(m.price)+'</div>'+
       (m.menu_group==='special'?'<div style="font-size:11px;color:#FFB020;margin-top:2px">⭐ Special</div>':(m.menu_group==='executive'?'<div style="font-size:11px;color:#FFB020;margin-top:2px">👑 Executive</div>':''))+
       (out?'<div class="low">Out of Stock</div>':(+m.stock<=10?'<div class="low">Only '+m.stock+' left</div>':''))+
       '<button '+(out?'disabled':'')+' onclick="add('+m.id+')">'+(out?'Out of Stock':'+ Add')+'</button></div>';
   });
-  host.innerHTML=h+'</div>';
+  V.innerHTML=h+'</div>';
   // 3D tilt
-  host.querySelectorAll('[data-tilt]').forEach(function(el){
+  document.querySelectorAll('[data-tilt]').forEach(function(el){
     function mv(e){var r=el.getBoundingClientRect(),p=e.touches?e.touches[0]:e;
       var dx=(p.clientX-r.left)/r.width-.5,dy=(p.clientY-r.top)/r.height-.5;
       el.style.transform='perspective(500px) rotateY('+dx*7+'deg) rotateX('+(-dy*7)+'deg)'}
