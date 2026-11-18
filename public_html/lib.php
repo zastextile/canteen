@@ -127,8 +127,16 @@ function attempt_login(string $username, string $password): ?array {
 }
 
 function audit(int $userId, string $userName, string $action, ?string $target, ?int $targetId, ?string $reason): void {
-  db()->prepare('INSERT INTO audit_log (user_id, user_name, action, target, target_id, reason) VALUES (?,?,?,?,?,?)')
-    ->execute([$userId, $userName, $action, $target, $targetId, $reason]);
+  // The audit log is a record of what happened, not a gate on it. The slow log
+  // caught these inserts taking two minutes while the server was saturated, and
+  // a login or a delivery must not fail because the record could not be written.
+  // The failure still reaches the server log, so nothing is hidden.
+  try {
+    db()->prepare('INSERT INTO audit_log (user_id, user_name, action, target, target_id, reason) VALUES (?,?,?,?,?,?)')
+      ->execute([$userId, $userName, $action, $target, $targetId, $reason]);
+  } catch (Throwable $e) {
+    error_log('Canteen: audit write failed (' . $action . ') — ' . $e->getMessage());
+  }
 }
 
 // wallet balance lives on users.wallet (kept in sync with wallet_topups log)

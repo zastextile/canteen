@@ -465,9 +465,12 @@ case 'order_status': {
   $u = require_role('sales');
   $b=body(); $id=(int)($b['id']??0); $status=strtolower($b['status']??'');
   if (!in_array($status,['preparing','delivered'],true)) fail('Bad status');
-  $st = db()->prepare("SELECT * FROM orders WHERE id=? AND status IN ('Pending','Preparing')"); $st->execute([$id]);
-  $o = $st->fetch(); if (!$o) fail('Order not found');
-  db()->prepare('UPDATE orders SET status=? WHERE id=?')->execute([ucfirst($status),$id]);
+  // One conditional UPDATE rather than SELECT-then-UPDATE: half the statements,
+  // no row held between them, and two staff tapping the same order at once can
+  // no longer both win — the second gets 0 rows and is told so.
+  $up = db()->prepare("UPDATE orders SET status=? WHERE id=? AND status IN ('Pending','Preparing')");
+  $up->execute([ucfirst($status),$id]);
+  if (!$up->rowCount()) fail('Order not found, or already handled by someone else');
   $vf = VOICE_DIR.'/order_'.$id.'.mp3';
   if ($status==='delivered' && file_exists($vf)) unlink($vf);   // free cached voice
   audit((int)$u['id'],$u['name'],'Order '.$status,'orders',$id,null);
