@@ -9,18 +9,58 @@ session_start();
 
 function db(): PDO {
   static $pdo = null;
-  if ($pdo === null) {
-    $pdo = new PDO('mysql:host=' . DB_HOST . ';dbname=' . DB_NAME . ';charset=utf8mb4', DB_USER, DB_PASS,
-      [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-       // Pakistan Standard Time. The server's MySQL runs on UTC, so without this every
-       // DEFAULT current_timestamp, NOW() and CURDATE() lands 5 hours behind the real
-       // Karachi time that PHP already uses (config.php sets Asia/Karachi). A fixed
-       // +05:00 offset is used rather than the name 'Asia/Karachi' because shared hosts
-       // usually have MySQL's named-timezone tables unloaded; Pakistan has no DST, so
-       // the offset never changes.
-       PDO::MYSQL_ATTR_INIT_COMMAND => "SET time_zone = '+05:00'"]);
+  if ($pdo !== null) return $pdo;
+
+  // 'localhost' makes PDO connect through a Unix socket, and a socket path that
+  // does not match the server's gives SQLSTATE[HY000] [2002] "No such file or
+  // directory" — the error that was killing half of all logins. 127.0.0.1
+  // forces TCP instead, which does not depend on that file existing.
+  $host = (DB_HOST === 'localhost') ? '127.0.0.1' : DB_HOST;
+  $dsn  = 'mysql:host=' . $host . ';dbname=' . DB_NAME . ';charset=utf8mb4';
+  $opt  = [
+    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+    PDO::ATTR_TIMEOUT => 5,
+    // Pakistan Standard Time. The server's MySQL runs on UTC, so without this every
+    // DEFAULT current_timestamp, NOW() and CURDATE() lands 5 hours behind the real
+    // Karachi time that PHP already uses (config.php sets Asia/Karachi). A fixed
+    // +05:00 offset is used rather than the name 'Asia/Karachi' because shared hosts
+    // usually have MySQL's named-timezone tables unloaded; Pakistan has no DST, so
+    // the offset never changes.
+    PDO::MYSQL_ATTR_INIT_COMMAND => "SET time_zone = '+05:00'",
+  ];
+
+  // The database drops out in short bursts on this host. One blip used to be an
+  // uncaught exception, a PHP fatal and a blank 500 for whoever was standing at
+  // the counter; two quick retries turn almost all of them back into a normal page.
+  $err = null;
+  for ($try = 1; $try <= 3; $try++) {
+    try { $pdo = new PDO($dsn, DB_USER, DB_PASS, $opt); return $pdo; }
+    catch (PDOException $e) {
+      $err = $e;
+      if ($try < 3) usleep(200000 * $try);   // 0.2s, then 0.4s
+    }
   }
-  return $pdo;
+
+  // Still down after three attempts. Answer in a shape the app understands
+  // instead of dying, so the screen says something useful and the staff can retry.
+  error_log('Canteen: database unreachable — ' . $err->getMessage());
+  if (!headers_sent()) {
+    http_response_code(503);
+    header('Retry-After: 5');
+  }
+  if (basename($_SERVER['SCRIPT_NAME'] ?? '') === 'api.php') {
+    if (!headers_sent()) header('Content-Type: application/json; charset=utf-8');
+    echo json_encode(['ok' => false, 'error' => 'Server busy — please try again in a moment']);
+  } else {
+    if (!headers_sent()) header('Content-Type: text/html; charset=utf-8');
+    echo '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+       . '<style>body{background:#06080F;color:#EDF1F8;font-family:system-ui,sans-serif;display:grid;'
+       . 'place-items:center;height:100vh;margin:0;text-align:center;padding:24px}'
+       . 'b{color:#FFB020;font-size:19px}p{color:#8A93A6;margin-top:10px}</style>'
+       . '<div><b>Server busy</b><p>Please try again in a moment.</p></div>';
+  }
+  exit;
 }
 
 function json_out($data, int $code = 200): void {
