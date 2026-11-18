@@ -6,7 +6,7 @@ require_once __DIR__ . '/lib.php';
 $a = $_GET['a'] ?? '';
 $READONLY = ['stats','users_list','kitchens_list','vendors_list','items_list','menu_list','orders_list',
   'inventory_list','salesstock_list','wallets_list','report','audit_list','chef_stock','sales_today',
-  'queue','customer_menu','my_orders','wallet_balance','whoami','comp_list','dish_photo_list'];
+  'queue','customer_menu','my_orders','wallet_balance','whoami','comp_list','dish_photo_list','queue_ver'];
 if (!in_array($a, $READONLY, true) && $a !== 'login') check_csrf();
 // Read-only actions never write to the session — release the session lock early so
 // concurrent requests from the same user (menu + orders + polling) don't serialize.
@@ -421,6 +421,26 @@ case 'sales_today': {
     return $st->fetchAll();
   });
   json_out(['ok'=>true,'rows'=>$rows]);
+}
+// A ~40-byte fingerprint of everything the sales screen displays. The screen
+// polls THIS instead of the full queue, and only fetches 'queue' or
+// 'sales_today' when the matching signature actually changes. Two indexed
+// aggregates with no joins and no row payload, against a queue fetch that
+// joined users and order_items and returned several KB every 8 seconds.
+case 'queue_ver': {
+  require_role('sales');
+  $d = db();
+  $q = $d->query("SELECT COUNT(*) n, COALESCE(SUM(CRC32(CONCAT(id,':',status))),0) sig
+                  FROM orders WHERE status IN ('Pending','Preparing')")->fetch();
+  $sk = sales_kitchen_id();
+  $s = ['sig'=>0];
+  if ($sk) {
+    $st = $d->prepare("SELECT COALESCE(SUM(CRC32(CONCAT(menu_item_id,':',quantity))),0) sig
+                       FROM inventory WHERE kitchen_id = ? AND menu_item_id IS NOT NULL");
+    $st->execute([$sk]);
+    $s = $st->fetch();
+  }
+  json_out(['ok'=>true,'v'=>$q['n'].'-'.$q['sig'],'sv'=>(string)$s['sig']]);
 }
 case 'queue': {
   require_role('sales');

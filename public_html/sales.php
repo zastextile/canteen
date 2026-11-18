@@ -94,7 +94,7 @@ muteBtn.textContent=sfx.muted?'🔇':'🔊';
 muteBtn.onclick=function(){muteBtn.textContent=sfx.toggle()?'🔇':'🔊'};
 document.querySelectorAll('nav a').forEach(function(a){a.onclick=function(){sfx.tick();TAB=a.dataset.t;
   document.querySelectorAll('nav a').forEach(function(x){x.classList.toggle('on',x===a)});
-  TAB==='queue'?queue():stock()}});
+  IDLE=0;TAB==='queue'?queue():stock();schedule()}});
 
 var urduNum={1:'ایک',2:'دو',3:'تین',4:'چار',5:'پانچ',6:'چھ',7:'سات',8:'آٹھ',9:'نو',10:'دس'};
 function ago(ts){
@@ -109,13 +109,21 @@ function clock(ts){
   return h+':'+(m<10?'0':'')+m;
 }
 
-var lastIds='';
+var lastIds='',ROWS=[];
 async function queue(){
   var j=await api('queue');
+  ROWS=j.rows;
   var ids=j.rows.map(function(o){return o.id}).join(',');
   if(ids!==lastIds && lastIds!=='' && TAB==='queue') sfx.whoosh();  // new order arrived
   lastIds=ids;
   if(TAB!=='queue')return;
+  paintQueue(ROWS);
+}
+
+// Drawing is split from fetching so the \u23f1 elapsed-time labels can be
+// redrawn from rows already in memory, without asking the server again.
+function paintQueue(rows){
+  var j={rows:rows};
   if(!j.rows.length){
     V.innerHTML='<div class="pledge">'+
       '<div class="pl-icon">🤲</div>'+
@@ -195,9 +203,35 @@ async function stock(){
   V.innerHTML=h+'</div>';
 }
 
+// ---- live refresh ----
+// Polls a ~40-byte fingerprint and only re-fetches the screen when it changes.
+// Stops completely while the phone is asleep or the tab is in the background,
+// and backs off to 15s then 30s when nothing has happened — snapping straight
+// back to 8s the moment an order arrives or the counter touches the screen.
+var LASTV='',LASTSV='',IDLE=0,POLLT=null;
+function delay(){return IDLE>=8?30000:IDLE>=4?15000:8000}
+function schedule(){clearTimeout(POLLT);POLLT=setTimeout(poll,delay())}
+async function poll(){
+  if(document.hidden){schedule();return}            // asleep: ask for nothing at all
+  try{
+    var j=await api('queue_ver'),changed=false;
+    if(j.v!==LASTV){LASTV=j.v;changed=true;if(TAB==='queue')await queue()}
+    if(j.sv!==LASTSV){LASTSV=j.sv;changed=true;if(TAB==='stock')await stock()}
+    IDLE=changed?0:IDLE+1;
+  }catch(e){IDLE++}
+  schedule();
+}
+document.addEventListener('visibilitychange',function(){
+  if(!document.hidden){IDLE=0;clearTimeout(POLLT);poll()}   // wake: check at once
+});
+['pointerdown','keydown'].forEach(function(ev){
+  addEventListener(ev,function(){if(IDLE>3){IDLE=0;schedule()}},{passive:true});
+});
+// Elapsed-time labels tick locally from the rows already held — no server call.
+setInterval(function(){if(TAB==='queue'&&ROWS.length&&!document.hidden)paintQueue(ROWS)},20000);
+
 boot().then(function(){
-  queue();
-  TIMER=setInterval(function(){TAB==='queue'?queue():stock()},8000);  // live refresh
+  poll();   // the first poll both draws the queue and records its fingerprint
 });
 </script>
 </body>
