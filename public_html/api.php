@@ -444,7 +444,7 @@ case 'queue_ver': {
 }
 case 'queue': {
   require_role('sales');
-  $st = db()->query("SELECT o.id,CONCAT(DAY(o.created_at),'-',COALESCE(o.day_seq,o.id)) AS token,LOWER(o.status) AS status,o.total,o.created_at AS placed_at,
+  $st = db()->query("SELECT o.id,o.id AS token,LOWER(o.status) AS status,o.total,o.created_at AS placed_at,
                      c.name customer,NULL AS customer_urdu,NULL AS photo_url
                      FROM orders o JOIN users c ON c.id=o.customer_id
                      WHERE o.status IN ('Pending','Preparing') ORDER BY o.created_at");
@@ -610,17 +610,6 @@ case 'place_order': {
     $d->prepare("INSERT INTO orders (customer_id,total,status) VALUES (?,?,'Pending')")
       ->execute([(int)$u['id'],$total]);
     $oid = (int)$d->lastInsertId();
-    // Counter token: this order's position among that day's orders, so it reads
-    // 26-1, 26-2 and restarts at 27-1 tomorrow. Counting rows with a lower id
-    // rather than taking MAX+1 means two customers ordering in the same instant
-    // get different numbers without any extra lock — their ids already differ.
-    $sq = $d->prepare("SELECT COUNT(*) FROM orders
-                       WHERE created_at >= (SELECT DATE(created_at) FROM orders WHERE id = ?)
-                         AND created_at <  (SELECT DATE(created_at) + INTERVAL 1 DAY FROM orders WHERE id = ?)
-                         AND id <= ?");
-    $sq->execute([$oid,$oid,$oid]);
-    $daySeq = (int)$sq->fetchColumn();
-    $d->prepare('UPDATE orders SET day_seq = ? WHERE id = ?')->execute([$daySeq,$oid]);
     $insItem = $d->prepare('INSERT INTO order_items (order_id,menu_item_id,item_name,price,quantity,subtotal,is_comp) VALUES (?,?,?,?,?,?,?)');
     $updInv  = $d->prepare('UPDATE inventory SET quantity=quantity-? WHERE id=?');
     $useComp = $d->prepare('UPDATE complimentary_allocations SET qty_used=?, used_on=CURDATE() WHERE id=?');
@@ -638,12 +627,12 @@ case 'place_order': {
     $d->commit();
     cache_bump('inventory'); // sales-kitchen stock just dropped — sales_today/customer_menu must reflect it now
     audit((int)$u['id'],$u['name'],'Place order '.CURRENCY.' '.$total.($compCount?' + '.$compCount.' complimentary':''),'orders',$oid,null);
-    json_out(['ok'=>true,'order_id'=>$oid,'token'=>date('j').'-'.$daySeq,'total'=>$total,'balance'=>wallet_balance((int)$u['id'])]);
+    json_out(['ok'=>true,'order_id'=>$oid,'token'=>$oid,'total'=>$total,'balance'=>wallet_balance((int)$u['id'])]);
   } catch (Throwable $ex) { if ($d->inTransaction()) $d->rollBack(); fail('Order failed: '.$ex->getMessage(),500); }
 }
 case 'my_orders': {
   $u = require_role('customer');
-  $st = db()->prepare("SELECT id,CONCAT(DAY(created_at),'-',COALESCE(day_seq,id)) AS token,LOWER(status) AS status,total,cancel_reason,created_at AS placed_at
+  $st = db()->prepare("SELECT id,id AS token,LOWER(status) AS status,total,cancel_reason,created_at AS placed_at
                        FROM orders WHERE customer_id=? ORDER BY created_at DESC LIMIT 50");
   $st->execute([(int)$u['id']]);
   $orders = $st->fetchAll();
@@ -664,7 +653,7 @@ case 'wallet_balance': {
 // ---------- Admin: orders, cancel, reverse ----------
 case 'orders_list': {
   require_role('admin');
-  $orders = db()->query("SELECT o.id,CONCAT(DAY(o.created_at),'-',COALESCE(o.day_seq,o.id)) AS token,LOWER(o.status) AS status,o.total,o.cancel_reason,
+  $orders = db()->query("SELECT o.id,o.id AS token,LOWER(o.status) AS status,o.total,o.cancel_reason,
                          o.created_at AS placed_at,c.name customer
                          FROM orders o JOIN users c ON c.id=o.customer_id
                          ORDER BY o.created_at DESC LIMIT 200")->fetchAll();

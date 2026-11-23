@@ -347,7 +347,7 @@ async function orders(){
     var act='';
     if(o.status==='pending'||o.status==='preparing')act='<button class="btn red" onclick="oCancel('+o.id+')">Cancel</button>';
     if(o.status==='delivered')act='<button class="btn ghost" onclick="oReverse('+o.id+')">Reverse</button>';
-    h+='<tr><td><b>'+esc(o.token)+'</b><div style="font-size:11px;color:#8A93A6">#'+o.id+'</div></td><td>'+esc(o.customer)+'</td><td style="max-width:280px">'+its+'</td><td>'+fmt(o.total)+'</td>'+
+    h+='<tr><td>'+esc(o.token)+'</td><td>'+esc(o.customer)+'</td><td style="max-width:280px">'+its+'</td><td>'+fmt(o.total)+'</td>'+
       '<td><span class="pill p-'+o.status+'">'+o.status+'</span>'+(o.cancel_reason?'<div style="font-size:12px;color:#8A93A6">'+esc(o.cancel_reason)+'</div>':'')+'</td>'+
       '<td style="font-size:12px;color:#8A93A6">'+o.placed_at+'</td><td style="text-align:right">'+act+'</td></tr>';
   });
