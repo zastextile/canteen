@@ -25,7 +25,7 @@ define('UPLOAD_DIR', __DIR__ . '/uploads');
 //   php -r "echo bin2hex(random_bytes(32)), PHP_EOL;"
 // and each one goes in BOTH apps' config — never in a page, in JavaScript,
 // in git or in a chat message.
-define('ZAS_CARD_URL', 'https://invoice.thqlinen.com/api/v1/index.php?route=/canteen/card-check');
+define('ZAS_CARD_URL', 'https://invoice.thqlinen.com/canteen_api.php?a=card-check');
 define('ZAS_CARD_KEY', '');     // canteen SENDS this to ZAS on every card check
 define('ZAS_CHARGES_KEY', '');  // ZAS SENDS this to zas.php; the canteen checks it
 define('ZAS_DEFAULT_WEEKLY_LIMIT', 100000);  // paisa — Rs 1,000, used only until ZAS sends weekly_limit
