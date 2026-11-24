@@ -399,7 +399,7 @@ function paintDishes() {
       var p = PHOTOS[String(m.id)];
       h += '<button class="dish' + (picked ? ' pick' : '') + '"' + (off ? ' disabled' : '') +
         ' onclick="add(' + m.id + ')">' +
-        (p ? '<img class="ph" src="' + esc(p.url) + '" alt="">'
+        (p ? '<img class="ph" src="' + esc(p) + '" alt="">'
            : '<div class="em">' + esc(m.emoji || '🍽') + '</div>') +
         '<div class="bg' + (picked ? ' have' : (stock <= 5 ? ' low' : '')) + '">' +
           (picked ? picked + ' added' : stock + ' left') + '</div>' +
